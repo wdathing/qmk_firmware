@@ -22,6 +22,8 @@ enum custom_keycodes {
     CC_SAFE_RANGE_END,
     CC_0,
     CC_1,
+    CC_LCTL,
+    CC_LALT,
 };
 
 typedef struct {
@@ -50,7 +52,24 @@ static bool ctrl_alt_held(void) {
     return (mods & MOD_BIT(KC_LCTL)) && (mods & MOD_BIT(KC_LALT));
 }
 
+static bool ctrl_or_alt_held(void) {
+    uint8_t mods = get_mods();
+    return (mods & MOD_BIT(KC_LCTL)) || (mods & MOD_BIT(KC_LALT));
+}
+
+// Tapping Ctrl+Alt together (nothing else pressed while both are held)
+// sends the Windows/GUI key. Ctrl and Alt still register/unregister
+// immediately as normal modifiers -- the tap only fires retroactively on
+// release, once both are up and no other key intervened, so it can't
+// misfire during the Ctrl+Alt+0/1 layer-switch chord above.
+static bool gui_chord_active = false;
+static bool gui_chord_broken = false;
+
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+    if (record->event.pressed && keycode != CC_LCTL && keycode != CC_LALT && ctrl_alt_held()) {
+        gui_chord_broken = true;
+    }
+
     if (keycode >= SAFE_RANGE && keycode < CC_SAFE_RANGE_END) {
         if (record->event.pressed) {
             const coco_sym_t         *sym  = &coco_symbols[keycode - SAFE_RANGE];
@@ -95,6 +114,40 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
                 unregister_code(KC_0);
             }
             return false;
+        case CC_LCTL:
+            if (record->event.pressed) {
+                register_code(KC_LCTL);
+                if (get_mods() & MOD_BIT(KC_LALT)) {
+                    gui_chord_active = true;
+                }
+            } else {
+                unregister_code(KC_LCTL);
+                if (gui_chord_active && !ctrl_or_alt_held()) {
+                    if (!gui_chord_broken) {
+                        tap_code16(KC_LGUI);
+                    }
+                    gui_chord_active = false;
+                    gui_chord_broken = false;
+                }
+            }
+            return false;
+        case CC_LALT:
+            if (record->event.pressed) {
+                register_code(KC_LALT);
+                if (get_mods() & MOD_BIT(KC_LCTL)) {
+                    gui_chord_active = true;
+                }
+            } else {
+                unregister_code(KC_LALT);
+                if (gui_chord_active && !ctrl_or_alt_held()) {
+                    if (!gui_chord_broken) {
+                        tap_code16(KC_LGUI);
+                    }
+                    gui_chord_active = false;
+                    gui_chord_broken = false;
+                }
+            }
+            return false;
     }
     return true;
 }
@@ -120,7 +173,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_X,       KC_Y,    KC_Z,     KC_UP,   KC_DOWN, KC_LEFT, KC_RGHT, KC_SPC,
         CC_0,       CC_1,    CC_2,     KC_3,    KC_4,    KC_5,    CC_6,    CC_7,
         CC_8,       CC_9,    CC_COLN,  CC_SCLN, KC_COMM, CC_MINS, KC_DOT,  KC_SLSH,
-        KC_ENT,     KC_HOME, QK_GESC,  KC_LALT, KC_LCTL, KC_F1,   KC_F2,   KC_LSFT
+        KC_ENT,     KC_HOME, QK_GESC,  CC_LALT, CC_LCTL, KC_F1,   KC_F2,   KC_LSFT
     ),
     [KEYMAP_PC] = LAYOUT(
         LSFT(KC_2), KC_A,    KC_B,     KC_C,    KC_D,    KC_E,    KC_F,    KC_G,
@@ -129,7 +182,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_X,       KC_Y,    KC_Z,     KC_UP,   KC_DOWN, KC_LEFT, KC_RGHT, KC_SPC,
         CC_0,       CC_1,    KC_2,     KC_3,    KC_4,    KC_5,    KC_6,    KC_7,
         KC_8,       KC_9,    KC_SCLN,  KC_SCLN, KC_COMM, KC_MINS, KC_DOT,  KC_SLSH,
-        KC_ENT,     KC_HOME, QK_GESC,  KC_LALT, KC_LCTL, KC_F1,   KC_F2,   KC_LSFT
+        KC_ENT,     KC_HOME, QK_GESC,  CC_LALT, CC_LCTL, KC_F1,   KC_F2,   KC_LSFT
     ),
 };
 
