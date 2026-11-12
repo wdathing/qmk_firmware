@@ -201,13 +201,50 @@ static const pin_t    joystick_pins[JOY_COUNT]     = {GP27, GP20, GP21, GP22, GP
 static const uint16_t joystick_keycodes[JOY_COUNT] = {KC_UP, KC_DOWN, KC_LEFT, KC_RGHT, KC_SPC};
 static bool            joystick_pressed[JOY_COUNT]  = {false, false, false, false, false};
 
+// Status LEDs (active high, through 1k to GND):
+//   D1 (GP19) lit while the CoCo layout is the default layer (off in PC mode).
+//   D2 (GP18) lit while any key -- matrix or joystick -- is held.
+#define LED_MODE_PIN GP19
+#define LED_HELD_PIN GP18
+
+static void update_mode_led(layer_state_t state) {
+    gpio_write_pin(LED_MODE_PIN, get_highest_layer(state) == KEYMAP_COCO);
+}
+
 void matrix_init_user(void) {
     for (uint8_t i = 0; i < JOY_COUNT; i++) {
         gpio_set_pin_input_high(joystick_pins[i]);
     }
+    gpio_set_pin_output(LED_MODE_PIN);
+    gpio_set_pin_output(LED_HELD_PIN);
+    gpio_write_pin_low(LED_MODE_PIN);
+    gpio_write_pin_low(LED_HELD_PIN);
+}
+
+void keyboard_post_init_user(void) {
+    update_mode_led(default_layer_state);
+}
+
+layer_state_t default_layer_state_set_user(layer_state_t state) {
+    update_mode_led(state);
+    return state;
 }
 
 void matrix_scan_user(void) {
+    bool any_held = false;
+    for (uint8_t row = 0; row < MATRIX_ROWS; row++) {
+        if (matrix_get_row(row)) {
+            any_held = true;
+            break;
+        }
+    }
+    for (uint8_t i = 0; i < JOY_COUNT; i++) {
+        if (joystick_pressed[i]) {
+            any_held = true;
+        }
+    }
+    gpio_write_pin(LED_HELD_PIN, any_held);
+
     for (uint8_t i = 0; i < JOY_COUNT; i++) {
         bool pressed = !gpio_read_pin(joystick_pins[i]);
         if (pressed != joystick_pressed[i]) {
